@@ -2,6 +2,8 @@ package net.mattseq.item_holograms.events;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
+import net.mattseq.item_holograms.ItemHolograms;
+import net.mattseq.item_holograms.ItemLabelCache;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
@@ -13,6 +15,9 @@ import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
@@ -34,6 +39,11 @@ public class RenderEventHandler {
 
         if (mc.player == null || mc.level == null) return;
 
+        PoseStack poseStack = event.getPoseStack();
+        MultiBufferSource.BufferSource buffer = mc.renderBuffers().bufferSource();
+
+        long gameTime = mc.level.getGameTime();
+
         Vec3 camPos = camera.getPosition();
 
         Frustum frustum = event.getFrustum();
@@ -45,12 +55,75 @@ public class RenderEventHandler {
             player.getBoundingBox().inflate(32.0)
         );
 
+        int drawn = 0;
+
         for (ItemEntity item : items) {
             // skip items outside of frustum
             if (!frustum.isVisible(item.getBoundingBox())) continue;
 
-            PoseStack poseStack = event.getPoseStack();
-            MultiBufferSource.BufferSource buffer = mc.renderBuffers().bufferSource();
+            ItemLabelCache.CachedLabel cached = ItemLabelCache.get(item.getId());
+            ItemStack stack = item.getItem();
+            boolean updateLabel = false;
+            boolean updateLOS = false;
+
+            // Determine if label needs rebuild (only when stack changes or first time)
+            if (cached == null) {
+                updateLabel = true;
+                updateLOS = true;
+            } else if (!ItemStack.isSameItemSameTags(cached.lastStack, stack) || cached.lastStack.getCount() != stack.getCount()) {
+                updateLabel = true;
+            }
+
+            // Determine if LOS needs refresh (throttled)
+            if (cached == null || (gameTime - cached.lastUpdate) > 5) {
+                updateLOS = true;
+            }
+
+            // Rebuild label if needed
+            if (updateLabel) {
+                ItemHolograms.LOGGER.debug("Rebuilding label for item {}", item.getId());
+
+                // get name and attach number of item
+                MutableComponent comp = item.getItem().getHoverName().copy();
+
+                // apply rarity color to name
+                ChatFormatting rarityFmt = item.getItem().getRarity().color;
+                comp = comp.withStyle(rarityFmt);
+
+                // add count of items
+                int count = item.getItem().getCount();
+                if (count > 1) {
+                    comp = comp.append(Component.literal(" x" + count).withStyle(ChatFormatting.WHITE));
+                }
+
+                if (cached == null) {
+                    cached = new ItemLabelCache.CachedLabel(comp, stack, true, gameTime);
+                    ItemLabelCache.put(item.getId(), cached);
+                } else {
+                    cached.label = comp;
+                    cached.lastStack = stack.copy();
+                }
+            }
+
+            // Recalculate LOS if needed
+            if (updateLOS) {
+                ItemHolograms.LOGGER.debug("Recalculating LOS for item {}", item.getId());
+
+                Vec3 targetPos = item.getBoundingBox().getCenter();
+                HitResult result = mc.level.clip(new ClipContext(
+                        camPos,
+                        targetPos,
+                        ClipContext.Block.COLLIDER,
+                        ClipContext.Fluid.NONE,
+                        player
+                ));
+                cached.visibleLOS = (result.getType() != HitResult.Type.BLOCK);
+                cached.lastUpdate = gameTime;
+            }
+
+            if (!cached.visibleLOS) continue;
+
+            drawn++;
 
             poseStack.pushPose();
 
@@ -71,26 +144,14 @@ public class RenderEventHandler {
             scale = (float) Math.min(scale, 0.05);
             poseStack.scale(-scale, -scale, scale);
 
-            // get name and attach number of item
-            MutableComponent comp = item.getItem().getHoverName().copy();
 
-            // apply rarity color to name
-            ChatFormatting rarityFmt = item.getItem().getRarity().color;
-            comp = comp.withStyle(rarityFmt);
-
-            // add count of items
-            int count = item.getItem().getCount();
-            if (count > 1) {
-                comp = comp.append(Component.literal(" x" + count).withStyle(ChatFormatting.WHITE));
-            }
-
-            int textWidth = mc.font.width(comp);
+            int textWidth = mc.font.width(cached.label);
 
             float x = -textWidth / 2f;
             float y = 0;
 
             mc.font.drawInBatch(
-                comp,
+                cached.label,
                 x,
                 y,
                 0xFFFFFF,
@@ -104,8 +165,11 @@ public class RenderEventHandler {
 
 
             poseStack.popPose();
-            buffer.endBatch();
         }
+
+        buffer.endBatch();
+
+        ItemHolograms.LOGGER.debug("Rendered {} item holograms", drawn);
     }
 
     // NOT USED
