@@ -9,6 +9,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -35,6 +36,9 @@ public class RenderEventHandler {
 
         Vec3 camPos = camera.getPosition();
 
+        Frustum frustum = event.getFrustum();
+        frustum.prepare(camPos.x, camPos.y, camPos.z);
+
         assert player != null;
         List<ItemEntity> items = player.level().getEntitiesOfClass(
             ItemEntity.class,
@@ -42,6 +46,9 @@ public class RenderEventHandler {
         );
 
         for (ItemEntity item : items) {
+            // skip items outside of frustum
+            if (!frustum.isVisible(item.getBoundingBox())) continue;
+
             PoseStack poseStack = event.getPoseStack();
             MultiBufferSource.BufferSource buffer = mc.renderBuffers().bufferSource();
 
