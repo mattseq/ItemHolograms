@@ -2,7 +2,6 @@ package net.mattseq.item_holograms.events;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
-import net.mattseq.item_holograms.ItemHolograms;
 import net.mattseq.item_holograms.ItemLabelCache;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Camera;
@@ -55,8 +54,6 @@ public class RenderEventHandler {
             player.getBoundingBox().inflate(32.0)
         );
 
-        int drawn = 0;
-
         for (ItemEntity item : items) {
             // skip items outside of frustum
             if (!frustum.isVisible(item.getBoundingBox())) continue;
@@ -75,13 +72,12 @@ public class RenderEventHandler {
             }
 
             // Determine if LOS needs refresh (throttled)
-            if (cached == null || (gameTime - cached.lastUpdate) > 5) {
+            if (cached == null || (gameTime - cached.lastUpdate) > 10) {
                 updateLOS = true;
             }
 
             // Rebuild label if needed
             if (updateLabel) {
-                ItemHolograms.LOGGER.debug("Rebuilding label for item {}", item.getId());
 
                 // get name and attach number of item
                 MutableComponent comp = item.getItem().getHoverName().copy();
@@ -107,7 +103,6 @@ public class RenderEventHandler {
 
             // Recalculate LOS if needed
             if (updateLOS) {
-                ItemHolograms.LOGGER.debug("Recalculating LOS for item {}", item.getId());
 
                 Vec3 targetPos = item.getBoundingBox().getCenter();
                 HitResult result = mc.level.clip(new ClipContext(
@@ -122,8 +117,6 @@ public class RenderEventHandler {
             }
 
             if (!cached.visibleLOS) continue;
-
-            drawn++;
 
             poseStack.pushPose();
 
@@ -168,8 +161,6 @@ public class RenderEventHandler {
         }
 
         buffer.endBatch();
-
-        ItemHolograms.LOGGER.debug("Rendered {} item holograms", drawn);
     }
 
     // NOT USED
