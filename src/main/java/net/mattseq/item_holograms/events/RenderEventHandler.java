@@ -11,11 +11,16 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.culling.Frustum;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
@@ -24,7 +29,9 @@ import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @OnlyIn(Dist.CLIENT)
 @Mod.EventBusSubscriber(value = Dist.CLIENT)
@@ -137,27 +144,82 @@ public class RenderEventHandler {
             scale = (float) Math.min(scale, 0.05);
             poseStack.scale(-scale, -scale, scale);
 
+            if (getRaycastItem(item)) {
+                poseStack.scale(2, 2, 2);
 
-            int textWidth = mc.font.width(cached.label);
+                // Collect extra lines
+                List<Component> lines = new ArrayList<>();
+                lines.add(cached.label); // main label
 
-            float x = -textWidth / 2f;
-            float y = 0;
+                // Enchantments
+                if (stack.isEnchanted()) {
+                    Map<Enchantment, Integer> enchants = EnchantmentHelper.getEnchantments(stack);
+                    for (Map.Entry<Enchantment, Integer> e : enchants.entrySet()) {
+                        Component enchLine = Component.translatable(e.getKey().getDescriptionId())
+                                .append(" " + e.getValue())
+                                .withStyle(ChatFormatting.AQUA);
+                        lines.add(enchLine);
+                    }
+                }
 
-            mc.font.drawInBatch(
-                cached.label,
-                x,
-                y,
-                0xFFFFFF,
-                false,
-                poseStack.last().pose(),
-                buffer,
-                Font.DisplayMode.NORMAL,
-                0,
-                15728880
-            );
+                // Durability
+                if (stack.isDamageableItem()) {
+                    int max = stack.getMaxDamage();
+                    int left = max - stack.getDamageValue();
+                    float percent = Math.round((left / (float) max) * 100);
+                    lines.add(Component.literal("Durability: " + percent + "%").withStyle(ChatFormatting.GRAY));
+                }
+
+                // Draw all lines
+                float y = lines.size() == 1 ? -6 : -((lines.size() - 1) * (mc.font.lineHeight + 2)) / 2f;
+                for (Component line : lines) {
+                    int textWidth = mc.font.width(line);
+                    float x = -textWidth / 2f;
+                    drawBox(poseStack, x - 2, y - 2, x + textWidth + 2, y + mc.font.lineHeight, 0x80000000);
+
+                    mc.font.drawInBatch(
+                            line,
+                            x,
+                            y,
+                            0xFFFFFF,
+                            false,
+                            poseStack.last().pose(),
+                            buffer,
+                            Font.DisplayMode.NORMAL,
+                            0,
+                            15728880
+                    );
+                    buffer.endBatch();
+
+                    y += mc.font.lineHeight + 2; // stack vertically
+                }
+
+                poseStack.popPose();
+            } else {
+                int textWidth = mc.font.width(cached.label);
+
+                float x = -textWidth / 2f;
+                float y = 0;
+
+                mc.font.drawInBatch(
+                        cached.label,
+                        x,
+                        y,
+                        0xFFFFFF,
+                        false,
+                        poseStack.last().pose(),
+                        buffer,
+                        Font.DisplayMode.NORMAL,
+                        0,
+                        15728880
+                );
 
 
-            poseStack.popPose();
+                poseStack.popPose();
+                buffer.endBatch();
+            }
+
+
         }
 
         buffer.endBatch();
@@ -187,5 +249,29 @@ public class RenderEventHandler {
         BufferUploader.drawWithShader(buffer.end());
 
         RenderSystem.disableBlend();
+    }
+
+    private static boolean getRaycastItem(ItemEntity item) {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer player = mc.player;
+        if (player == null) return false;
+
+        float pt = mc.getFrameTime();
+        Vec3 eye = player.getEyePosition(pt);
+        Vec3 look = player.getViewVector(pt);
+        double reach = 6.0D;
+
+        Vec3 end = eye.add(look.scale(reach));
+
+        EntityHitResult result = ProjectileUtil.getEntityHitResult(
+                player.level(),
+                player,
+                eye,
+                end,
+                player.getBoundingBox().expandTowards(look.scale(reach)).inflate(1.0D),
+                e -> e == item
+        );
+
+        return result != null && result.getEntity() == item;
     }
 }
