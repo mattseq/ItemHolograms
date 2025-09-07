@@ -2,7 +2,9 @@ package net.mattseq.item_holograms.events;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
+import net.mattseq.item_holograms.ItemHolograms;
 import net.mattseq.item_holograms.ItemLabelCache;
+import net.mattseq.item_holograms.util.BubbleRenderer;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
@@ -11,14 +13,13 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.culling.Frustum;
-import net.minecraft.nbt.ListTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.enchantment.Enchantment;
-import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -29,9 +30,7 @@ import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 @OnlyIn(Dist.CLIENT)
 @Mod.EventBusSubscriber(value = Dist.CLIENT)
@@ -144,54 +143,75 @@ public class RenderEventHandler {
             scale = (float) Math.min(scale, 0.05);
             poseStack.scale(-scale, -scale, scale);
 
-            if (getRaycastItem(item)) {
-                poseStack.scale(2, 2, 2);
+            if (getRaycastItem(item) && getTooltip(item).size() > 1) {
 
                 // Collect extra lines
-                List<Component> lines = new ArrayList<>();
-                lines.add(cached.label); // main label
+//                List<Component> lines = new ArrayList<>();
+//                lines.add(cached.label); // main label
+//
+//
+//
+//                // Enchantments
+//                if (stack.isEnchanted()) {
+//                    Map<Enchantment, Integer> enchants = EnchantmentHelper.getEnchantments(stack);
+//                    for (Map.Entry<Enchantment, Integer> e : enchants.entrySet()) {
+//                        Component enchLine = Component.translatable(e.getKey().getDescriptionId())
+//                                .append(" " + e.getValue())
+//                                .withStyle(ChatFormatting.AQUA);
+//                        lines.add(enchLine);
+//                    }
+//                }
+//
+//                // Durability
+//                if (stack.isDamageableItem()) {
+//                    int max = stack.getMaxDamage();
+//                    int left = max - stack.getDamageValue();
+//                    float percent = Math.round((left / (float) max) * 100);
+//                    lines.add(Component.literal("Durability: " + percent + "%").withStyle(ChatFormatting.GRAY));
+//                }
 
-                // Enchantments
-                if (stack.isEnchanted()) {
-                    Map<Enchantment, Integer> enchants = EnchantmentHelper.getEnchantments(stack);
-                    for (Map.Entry<Enchantment, Integer> e : enchants.entrySet()) {
-                        Component enchLine = Component.translatable(e.getKey().getDescriptionId())
-                                .append(" " + e.getValue())
-                                .withStyle(ChatFormatting.AQUA);
-                        lines.add(enchLine);
-                    }
-                }
+                List<Component> lines = getTooltip(item);
 
-                // Durability
-                if (stack.isDamageableItem()) {
-                    int max = stack.getMaxDamage();
-                    int left = max - stack.getDamageValue();
-                    float percent = Math.round((left / (float) max) * 100);
-                    lines.add(Component.literal("Durability: " + percent + "%").withStyle(ChatFormatting.GRAY));
-                }
-
-                // Draw all lines
-                float y = lines.size() == 1 ? -6 : -((lines.size() - 1) * (mc.font.lineHeight + 2)) / 2f;
+                // calculate bubble dimensions
+                int padding = 1;
+                int lineHeight = mc.font.lineHeight + 2;
+                int bubbleWidth = 0;
                 for (Component line : lines) {
-                    int textWidth = mc.font.width(line);
-                    float x = -textWidth / 2f;
-                    drawBox(poseStack, x - 2, y - 2, x + textWidth + 2, y + mc.font.lineHeight, 0x80000000);
+                    int w = mc.font.width(line);
+                    if (w > bubbleWidth) bubbleWidth = w;
+                }
+                bubbleWidth += padding * 2;
+                int bubbleHeight = lines.size() * lineHeight + padding * 2;
 
+                // render bubble behind all lines
+                BubbleRenderer.renderBubble(
+                    poseStack,
+                    -(bubbleWidth / 2),
+                    -bubbleHeight / 2,
+                    bubbleWidth,
+                    bubbleHeight,
+                    ResourceLocation.fromNamespaceAndPath(ItemHolograms.MODID, "textures/gui/tooltip.png"),
+                    padding
+                );
+
+                // draw all lines
+                float y = (float) -bubbleHeight / 2 + padding;
+                float x = (float) -bubbleWidth / 2 + padding;
+                for (Component line : lines) {
                     mc.font.drawInBatch(
-                            line,
-                            x,
-                            y,
-                            0xFFFFFF,
-                            false,
-                            poseStack.last().pose(),
-                            buffer,
-                            Font.DisplayMode.NORMAL,
-                            0,
-                            15728880
+                        line,
+                        x,
+                        y,
+                        0xFFFFFF,
+                        false,
+                        poseStack.last().pose(),
+                        buffer,
+                        Font.DisplayMode.NORMAL,
+                        0,
+                        15728880
                     );
                     buffer.endBatch();
-
-                    y += mc.font.lineHeight + 2; // stack vertically
+                    y += lineHeight;
                 }
 
                 poseStack.popPose();
@@ -273,5 +293,16 @@ public class RenderEventHandler {
         );
 
         return result != null && result.getEntity() == item;
+    }
+
+    public static List<Component> getTooltip(ItemEntity itemEntity) {
+        ItemStack stack = itemEntity.getItem();
+
+        Minecraft mc = Minecraft.getInstance();
+        TooltipFlag flag = mc.options.advancedItemTooltips
+                ? TooltipFlag.Default.ADVANCED
+                : TooltipFlag.Default.NORMAL;
+
+        return stack.getTooltipLines(mc.player, flag);
     }
 }
