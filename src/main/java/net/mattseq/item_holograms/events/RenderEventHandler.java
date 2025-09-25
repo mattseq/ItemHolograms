@@ -3,6 +3,7 @@ package net.mattseq.item_holograms.events;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
 import net.mattseq.item_holograms.ItemHolograms;
+import net.mattseq.item_holograms.ItemHologramsConfig;
 import net.mattseq.item_holograms.ItemLabelCache;
 import net.mattseq.item_holograms.util.BubbleRenderer;
 import net.minecraft.ChatFormatting;
@@ -57,12 +58,20 @@ public class RenderEventHandler {
         assert player != null;
         List<ItemEntity> items = player.level().getEntitiesOfClass(
             ItemEntity.class,
-            player.getBoundingBox().inflate(32.0)
+            player.getBoundingBox().inflate(ItemHologramsConfig.LABEL_DISPLAY_DISTANCE.get())
         );
 
         for (ItemEntity item : items) {
             // skip items outside of frustum
             if (!frustum.isVisible(item.getBoundingBox())) continue;
+
+
+            // skip items in minimal mode if not looked at
+            boolean minimal = ItemHologramsConfig.MINIMAL.get();
+            if (minimal && !getRaycastItem(item)) {
+                // In minimal mode, skip rendering if not looking at the item
+                continue;
+            }
 
             ItemLabelCache.CachedLabel cached = ItemLabelCache.get(item.getId());
             ItemStack stack = item.getItem();
@@ -127,8 +136,10 @@ public class RenderEventHandler {
             poseStack.pushPose();
 
             // hovering effect like the drops themselves
-            double yOffset = Math.sin(System.currentTimeMillis() / 500.0) * 0.1;
-            poseStack.translate(0, yOffset, 0);
+            if (ItemHologramsConfig.ENABLE_HOVER_ANIMATION.get())  {
+                double yOffset = Math.sin(System.currentTimeMillis() / 500.0) * 0.1;
+                poseStack.translate(0, yOffset, 0);
+            }
 
             // move to item position
             Vec3 itemPos = item.position().subtract(camPos);
@@ -143,32 +154,13 @@ public class RenderEventHandler {
             scale = (float) Math.min(scale, 0.05);
             poseStack.scale(-scale, -scale, scale);
 
-            if (getRaycastItem(item) && getTooltip(item).size() > 1) {
 
-                // Collect extra lines
-//                List<Component> lines = new ArrayList<>();
-//                lines.add(cached.label); // main label
-//
-//
-//
-//                // Enchantments
-//                if (stack.isEnchanted()) {
-//                    Map<Enchantment, Integer> enchants = EnchantmentHelper.getEnchantments(stack);
-//                    for (Map.Entry<Enchantment, Integer> e : enchants.entrySet()) {
-//                        Component enchLine = Component.translatable(e.getKey().getDescriptionId())
-//                                .append(" " + e.getValue())
-//                                .withStyle(ChatFormatting.AQUA);
-//                        lines.add(enchLine);
-//                    }
-//                }
-//
-//                // Durability
-//                if (stack.isDamageableItem()) {
-//                    int max = stack.getMaxDamage();
-//                    int left = max - stack.getDamageValue();
-//                    float percent = Math.round((left / (float) max) * 100);
-//                    lines.add(Component.literal("Durability: " + percent + "%").withStyle(ChatFormatting.GRAY));
-//                }
+            boolean showTooltip = ItemHologramsConfig.ENABLE_TOOLTIPS.get() && getRaycastItem(item) && getTooltip(item).size() > 1;
+            if (minimal) {
+                showTooltip = showTooltip && player.isShiftKeyDown();
+            }
+
+            if (showTooltip) {
 
                 List<Component> lines = getTooltip(item);
 
@@ -279,7 +271,7 @@ public class RenderEventHandler {
         float pt = mc.getFrameTime();
         Vec3 eye = player.getEyePosition(pt);
         Vec3 look = player.getViewVector(pt);
-        double reach = 6.0D;
+        double reach = ItemHologramsConfig.LABEL_DISPLAY_DISTANCE.get();
 
         Vec3 end = eye.add(look.scale(reach));
 
