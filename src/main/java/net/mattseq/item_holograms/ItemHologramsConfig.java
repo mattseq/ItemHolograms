@@ -12,7 +12,7 @@ public class ItemHologramsConfig {
     public static final ForgeConfigSpec.ConfigValue<Boolean> MINIMAL;
 
     static {
-        BUILDER.push("Configs for Damage Indicator");
+        BUILDER.push("Configs for Item Holograms");
 
         ENABLE_TOOLTIPS = BUILDER
                 .comment("Enable tooltips")
