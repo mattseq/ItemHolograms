@@ -16,7 +16,10 @@
     "environment": "*",
     "entrypoints": {
         "main": [
-          "com.mattseq.item_holograms.ExampleMod"
+          "com.mattseq.item_holograms.ItemHologramsMod"
+        ],
+        "client": [
+            "com.mattseq.item_holograms.ItemHologramsClient"
         ]
     },
     "mixins": [
