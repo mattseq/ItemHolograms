@@ -1,5 +1,6 @@
 package com.mattseq.item_holograms;
 
+import com.mattseq.item_holograms.events.ClientTickHandler;
 import com.mattseq.item_holograms.events.RenderEventHandler;
 import net.fabricmc.api.ClientModInitializer;
 
@@ -8,5 +9,6 @@ public class ItemHologramsClient implements ClientModInitializer {
     public void onInitializeClient() {
         ItemHologramsConfig.load();
         RenderEventHandler.regster();
+        ClientTickHandler.register();
     }
 }

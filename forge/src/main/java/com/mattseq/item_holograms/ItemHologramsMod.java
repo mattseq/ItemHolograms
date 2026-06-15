@@ -14,10 +14,8 @@ public class ItemHologramsMod {
         // project.
 
         // Use Forge to bootstrap the Common mod.
-        Constants.LOG.info("Hello Forge world!");
         CommonClass.init();
 
         ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, ItemHologramsConfig.SPEC, "item_holograms-client.toml");
-
     }
 }
